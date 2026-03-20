@@ -1,0 +1,153 @@
+use std::fmt::format;
+
+use eframe::egui;
+use egui::{Color32, RichText, epaint::text};
+use egui_dock::TabViewer;
+
+use crate::Chip8;
+
+pub enum Chip8Tab {
+    CentralDisplay,
+    Tool(String),
+}
+
+pub struct Chip8TabViewer<'a> {
+    pub chip8: &'a mut Chip8,
+    pub texture_handle: &'a mut Option<egui::TextureHandle>,
+}
+
+impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
+    type Tab = Chip8Tab;
+
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
+        match tab {
+            Chip8Tab::CentralDisplay => {
+                // 64x32 is Chip8 display size, so keep it to that ratio
+                let available = ui.available_size();
+                let current_ratio = available.x / available.y;
+
+                let (width, height) = if current_ratio > 2.0 {
+                    (available.y * 2.0, available.y)
+                } else {
+                    (available.x, available.x * 0.5)
+                };
+
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+
+                ui.painter().rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
+
+                let texture = self.texture_handle.get_or_insert_with(|| {
+                    let initial_pixels = vec![Color32::BLACK; 64 * 32];
+                    ui.ctx().load_texture(
+                        "chip-8_screen",
+                        egui::ColorImage::new([64, 32], initial_pixels),
+                        egui::TextureOptions::NEAREST
+                    )
+                });
+
+                let pixels: Vec<u8> = self.chip8.display
+                    .iter()
+                    .map(|&p| if p {255} else {0})
+                    .collect();
+
+                let image = egui::ColorImage::from_gray([64, 32], &pixels);
+                texture.set(image, egui::TextureOptions::NEAREST);
+
+                ui.painter().image(
+                    texture.id(), 
+                    rect, 
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), 
+                    egui::Color32::WHITE
+                );
+
+            },
+            Chip8Tab::Tool(name) => {
+                ui.label(format!("This is the {} tab", name));
+
+                // Registers
+                egui::ScrollArea::vertical().show(ui,|ui| {
+                    ui.group(|ui| {
+                        ui.label(RichText::new("Special Registers").strong());
+                        egui::Grid::new("special_regs")
+                            .num_columns(3)
+                            .spacing([40.0, 4.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                            ui.label("PC:");
+                            ui.label(RichText::new(format!("0x{:03X}", self.chip8.pc())).monospace());
+                            ui.label(RichText::new(format!("0b{:012b}", self.chip8.pc())).monospace());
+                            ui.end_row();
+
+                            ui.label("I:");
+                            ui.label(RichText::new(format!("0x{:03X}", self.chip8.i())).monospace());
+                            ui.label(RichText::new(format!("0b{:012b}", self.chip8.i())).monospace());
+                            ui.end_row();
+
+                            ui.label("SP:");
+                            ui.label(RichText::new(format!("0x{:02X}", self.chip8.sp())).monospace());
+                            ui.label(RichText::new(format!("0b{:08b}", self.chip8.sp())).monospace());
+                            ui.end_row();
+
+                            ui.label("DT:");
+                            ui.label(RichText::new(format!("{:03}", self.chip8.dt())).monospace());
+                            ui.end_row();
+
+                            ui.label("ST:");
+                            ui.label(RichText::new(format!("{:03}", self.chip8.st())).monospace());
+                            ui.end_row();
+                        });
+
+                        
+                        
+                    });
+
+                    ui.add_space(10.0);
+                
+                    let v = self.chip8.registers();
+                    
+                    ui.group(|ui| {
+                        ui.label(RichText::new("General Registers").strong());
+                        egui::Grid::new("v_regs")
+                            .num_columns(6)
+                            .spacing([10.0, 4.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                                for i in 0..8 {
+                                    // Left 0-8
+                                    ui.label(format!("V{:X}:", i));
+                                    ui.label(RichText::new(format!("0x{:02X}", v[i])).monospace());
+                                    ui.label(RichText::new(format!("0b{:08b}", v[i])).monospace());
+                                
+                                    // Right
+                                    let j = i + 8;
+                                    ui.label(format!("V{:X}:", j));
+                                    ui.label(RichText::new(format!("0x{:02X}", v[j])).monospace());
+                                    ui.label(RichText::new(format!("0b{:08b}", v[j])).monospace());
+                                    ui.end_row();
+                                }
+                        });
+                    });
+                
+                });
+
+
+            },
+        }
+    }
+
+    fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
+        match tab {
+            Chip8Tab::CentralDisplay => "Chip 8".into(),
+            Chip8Tab::Tool(name) => name.as_str().into(),
+        }
+    }
+
+    fn clear_background(&self, _tab: &Self::Tab) -> bool {
+        false
+    }
+
+    fn is_closeable(&self, _tab: &Self::Tab) -> bool {
+        false
+    }
+
+}

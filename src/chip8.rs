@@ -56,7 +56,7 @@ enum Instruction {
     LDVxDT(u8),      // 0xFx07 - Vx = Delay timer value
     LDVxK(u8),       // 0xFx0A - Wait for key press, Vx = key press
     LDDTVx(u8),      // 0xFx15 - Delay timer = Vx
-    LDSTVx(u8),      // 0xFx17 - Sound timer = Vx
+    LDSTVx(u8),      // 0xFx18 - Sound timer = Vx
     ADDI(u8),        // 0xFx1E - I = I + Vx
     LDF(u8),         // 0xFx29 - I = location of sprite for digit Vx
     LDB(u8),         // 0xFx33 - Store BCB representation of Vx in I, I+1, I+2
@@ -75,8 +75,8 @@ pub struct Chip8 {
     sp: u8,  // Stack pointer
     dt: u8, // Delay timer register
     st: u8, // Sound timer register
-    display: [bool; 64*32], // Pixel buffer
-    keys: [bool; 16], // Keys pressed
+    pub display: [bool; 64*32], // Pixel buffer
+    pub keys: [bool; 16], // Keys pressed
 }
 
 impl Chip8 {
@@ -105,14 +105,16 @@ impl Chip8 {
         self.memory[start..end].copy_from_slice(&DEFUALT_FONT);
     }
 
-    pub fn load_rom(&mut self, data: &[u8]) {
+    pub fn load_rom(&mut self, data: &[u8]) -> bool {
         let start = PROGRAM_START_ADDR as usize;
         let end = start + data.len();
         // Don't load if greater than memory
         if end <= MEMORY_SIZE {
             self.memory[start..end].copy_from_slice(data);
+            true
         } else {
             print!("Data size {:?} is larger than memory size {:?}", data.len(), MEMORY_SIZE);
+            false
         }
     }
 
@@ -174,7 +176,7 @@ impl Chip8 {
             (0xF, _, 0x0, 0x7)   => Instruction::LDVxDT(x),      
             (0xF, _, 0x0, 0xA)   => Instruction::LDVxK(x),       
             (0xF, _, 0x1, 0x5)   => Instruction::LDDTVx(x),      
-            (0xF, _, 0x1, 0x7)   => Instruction::LDSTVx(x),      
+            (0xF, _, 0x1, 0x8)   => Instruction::LDSTVx(x),      
             (0xF, _, 0x1, 0xE)   => Instruction::ADDI(x),        
             (0xF, _, 0x2, 0x9)   => Instruction::LDF(x),         
             (0xF, _, 0x3, 0x3)   => Instruction::LDB(x),         
@@ -194,7 +196,10 @@ impl Chip8 {
                 self.display.fill(false);
             },
             Instruction::RET => {
-                self.pc = self.stack[self.sp as usize];
+                if self.sp > 0 {
+                    self.pc = self.stack[self.sp as usize];
+                    self.sp -= 1;
+                }
             },
             Instruction::JP(nnn) => {
                 self.pc = nnn;
@@ -223,7 +228,7 @@ impl Chip8 {
                 self.v[x as usize] = kk;
             },
             Instruction::ADDByte(x, kk) => {
-                self.v[x as usize] += kk;
+                self.v[x as usize] = self.v[x as usize].wrapping_add(kk);
             },
             Instruction::LDReg(x, y) => {
                 self.v[x as usize] = self.v[y as usize];
@@ -353,13 +358,17 @@ impl Chip8 {
             }
             Instruction::LDStore(x) => {
                 let start = self.i as usize;
-                let end = (self.i + x as u16) as usize;
-                self.memory[start..end].copy_from_slice(&self.v[0..x as usize]);
+                let end = start + (x as usize) + 1;
+                if end <= MEMORY_SIZE {
+                    self.memory[start..end].copy_from_slice(&self.v[0..=(x as usize)]);
+                }
             },
             Instruction::LDLoad(x) => {
                 let start = self.i as usize;
-                let end = (self.i + x as u16) as usize;
-                self.v[0..x as usize].copy_from_slice(&self.memory[start..end]);
+                let end = start + (x as usize) + 1;
+                if end <= MEMORY_SIZE {
+                    self.v[0..=(x as usize)].copy_from_slice(&self.memory[start..end]);
+                }
             },
             Instruction::Unknown(_op) => {
                 println!("Opcode: {:?} not implemented yet", instruction);
@@ -367,14 +376,10 @@ impl Chip8 {
             _ => {
                 println!("Opcode: {:?} not implemented yet", instruction);
             }
-
-
-
         }
 
-
+        
     }
-
 
     pub fn update_timers(&mut self) {
         if self.dt > 0 {
@@ -403,6 +408,13 @@ impl Chip8 {
         }
     }
 
+    pub fn registers(&self) -> &[u8; 16] { &self.v }
+    pub fn pc(&self) -> u16 { self.pc }
+    pub fn i(&self) -> u16 { self.i }
+    pub fn sp(&self) -> u8 { self.sp }
+    pub fn dt(&self) -> u8 { self.dt }
+    pub fn st(&self) -> u8 { self.st }
+
 }
 
 #[test]
@@ -422,7 +434,52 @@ fn basic_cpu_test() {
         let instruction = test_chip8.decode(op);
         assert_eq!(instruction, instruction_list[i]);
     }
+}
 
+#[test]
+fn fetch_test() {
+    let mut chip8 = Chip8::new();
 
+    let rom: [u8; 8] = [0x60, 0x05, 0x70, 0x01, 0x30, 0x0F, 0x12, 0x02];
+    chip8.load_rom(&rom);
 
+    let op_list: [u16; 4] = [0x6005, 0x7001, 0x300F, 0x1202];
+
+    for i in 0..4 {
+        assert_eq!(chip8.fetch(), op_list[i]);
+    }
+}
+
+#[test]
+fn decode_test() {
+    let mut chip8 = Chip8::new();
+
+    let op_list: [u16; 4] = [0x6005, 0x7001, 0x300F, 0x1202];
+    let instruction_list: [Instruction; 4] = [Instruction::LDByte(0x0, 0x5), Instruction::ADDByte(0x0, 0x01), Instruction::SEByte(0x0, 0x0F), Instruction::JP(0x202)];
+
+    for i in 0..4 {
+        assert_eq!(chip8.decode(op_list[i]), instruction_list[i]);
+    }
+}
+
+#[test]
+fn execute_test() {
+    let mut chip8 = Chip8::new();
+
+    let rom: [u8; 8] = [0x60, 0x05, 0x70, 0x01, 0x30, 0x0F, 0x12, 0x02];
+    chip8.load_rom(&rom);
+
+    let mut count = 0;
+    loop {
+        chip8.tick();
+        count += 1;
+        if chip8.fetch() == 0x0000 {
+            break;
+        } else {
+            // Fetch goes forward so we need to go back
+            chip8.pc -= 2;
+        }
+    }
+
+    assert_eq!(count, 30);
 }
