@@ -7,15 +7,31 @@ use crate::gui::{Chip8Tab, Chip8TabViewer};
 
 mod gui;
 
+struct Chip8Timing {
+    pub cpu_speed_hz: f32,
+    pub timer_speed_hz: f32,
+    pub total_speed_mod: f32,
+    pub cpu_accumulator: f32,
+    pub timer_accumulator: f32,
+}
+
+impl Default for Chip8Timing {
+    fn default() -> Self {
+        Self {
+            cpu_speed_hz: 700.0,
+            timer_speed_hz: 60.0,
+            total_speed_mod: 1.0,
+            cpu_accumulator: 0.0,
+            timer_accumulator: 0.0,
+        }
+    }
+}
+
 struct Chip8App {
     chip8: Chip8,
     dock_state: DockState<Chip8Tab>,
     texture: Option<egui::TextureHandle>,
-
-    // Timing
-    cpu_speed_hz: f32,
-    cpu_accumulator: f32,
-    timer_accumulator: f32,
+    timing: Chip8Timing,
     rom_loaded: bool,
 }
 
@@ -33,20 +49,27 @@ impl Default for Chip8App {
 
         let mut dock_state = DockState::new(vec![Chip8Tab::CentralDisplay]);
         
-        // Split the s
-        let [_center, _left] = dock_state.main_surface_mut().split_left(
-            egui_dock::NodeIndex::root(), 
-            0.33, 
-            vec![Chip8Tab::Tool("Properties".into())]
+        // Split to the left
+        let [_right_node, left_panel] = dock_state.main_surface_mut().split_left(
+            egui_dock::NodeIndex::root(),
+            0.33,
+            vec![Chip8Tab::Controls, Chip8Tab::MemoryViewer]
         );
+
+        // Registers below
+        dock_state.main_surface_mut().split_below(
+            left_panel, 
+            0.5, // 50% height of the left side
+            vec![Chip8Tab::Registers]
+        );
+
+
 
         Self {
             chip8,
             dock_state,
             texture: None,
-            cpu_speed_hz: 700.0,
-            cpu_accumulator: 0.0,
-            timer_accumulator: 0.0,
+            timing: Chip8Timing::default(),
             rom_loaded,
         }
     }
@@ -58,18 +81,18 @@ impl eframe::App for Chip8App {
             if self.rom_loaded {
                 let dt = ctx.input(|i| i.stable_dt);
     
-                self.cpu_accumulator += dt;
-                let cpu_interval = 1.0 / self.cpu_speed_hz;
-                while self.cpu_accumulator >= cpu_interval {
+                self.timing.cpu_accumulator += dt;
+                let cpu_interval = 1.0 / (self.timing.cpu_speed_hz * self.timing.total_speed_mod);
+                while self.timing.cpu_accumulator >= cpu_interval {
                     self.chip8.tick();
-                    self.cpu_accumulator -= cpu_interval;
+                    self.timing.cpu_accumulator -= cpu_interval;
                 }
     
-                self.timer_accumulator += dt;
-                let timer_interval = 1.0 / 60.0;
-                while self.timer_accumulator >= timer_interval {
+                self.timing.timer_accumulator += dt;
+                let timer_interval = 1.0 / (self.timing.timer_speed_hz * self.timing.total_speed_mod);
+                while self.timing.timer_accumulator >= timer_interval {
                     self.chip8.update_timers();
-                    self.timer_accumulator -= timer_interval;
+                    self.timing.timer_accumulator -= timer_interval;
                 }
     
                 self.handle_input(ctx);
@@ -79,6 +102,7 @@ impl eframe::App for Chip8App {
                             let mut viewer = Chip8TabViewer {
                                 chip8: &mut self.chip8,
                                 texture_handle: &mut self.texture,
+                                timing: &mut self.timing,
                             };
                 
                             DockArea::new(&mut self.dock_state)

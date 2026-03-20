@@ -415,6 +415,17 @@ impl Chip8 {
     pub fn dt(&self) -> u8 { self.dt }
     pub fn st(&self) -> u8 { self.st }
 
+    pub fn reset(&mut self) {
+        self.v = [0; GENERAL_REGISTER_COUNT];
+        self.i = 0;
+        self.pc = PROGRAM_START_ADDR;
+        self.stack = [0; STACK_SIZE];
+        self.sp = 0;
+        self.dt = 0;
+        self.st = 0;
+        self.display.fill(false);
+    }
+
 }
 
 #[test]

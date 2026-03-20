@@ -4,16 +4,19 @@ use eframe::egui;
 use egui::{Color32, RichText, epaint::text};
 use egui_dock::TabViewer;
 
-use crate::Chip8;
+use crate::{Chip8, Chip8Timing};
 
 pub enum Chip8Tab {
     CentralDisplay,
-    Tool(String),
+    Controls,
+    Registers,
+    MemoryViewer,
 }
 
 pub struct Chip8TabViewer<'a> {
     pub chip8: &'a mut Chip8,
     pub texture_handle: &'a mut Option<egui::TextureHandle>,
+    pub timing: &'a mut Chip8Timing,
 }
 
 impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
@@ -61,9 +64,72 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                 );
 
             },
-            Chip8Tab::Tool(name) => {
-                ui.label(format!("This is the {} tab", name));
+            Chip8Tab::Controls => {
 
+                egui::ScrollArea::vertical().show(ui,|ui| {
+                    ui.group(|ui| {
+                        ui.label(RichText::new("Timing").strong());
+                        
+                        // Current CPU hz and timer hz
+                        egui::Grid::new("current_hz")
+                            .num_columns(2)
+                            .spacing([10.0, 4.0])
+                            .show(ui, |ui| {
+                                ui.label("Current CPU Hz:");
+                                ui.label(RichText::new(format!("{:} Hz", self.timing.cpu_speed_hz * self.timing.total_speed_mod)).monospace());
+                                ui.end_row();
+
+                                ui.label("Current Timer Hz:");
+                                ui.label(RichText::new(format!("{:} Hz", self.timing.timer_speed_hz * self.timing.total_speed_mod)).monospace());
+                                ui.end_row();
+                            });
+
+                        ui.add_space(10.0);
+
+                        // Speed adjusters
+                        egui::Grid::new("adjust_hz")
+                            .num_columns(2)
+                            .spacing([10.0, 4.0])
+                            .show(ui, |ui| {
+                                ui.label("CPU Hz:");
+                                ui.add(
+                                    egui::Slider::new( &mut self.timing.cpu_speed_hz, 0.0..=1000.0)
+                                    .suffix(" Hz")
+                                    .show_value(true)
+                                );
+                                ui.end_row();
+
+                                ui.label("Timer Hz:");
+                                ui.add(
+                                    egui::Slider::new( &mut self.timing.timer_speed_hz, 0.0..=120.0)
+                                    .suffix(" Hz")
+                                    .show_value(true)
+                                );
+                                ui.end_row();
+
+                                ui.label("Total Modifier:");
+                                ui.add(
+                                    egui::Slider::new( &mut self.timing.total_speed_mod, 0.0..=3.0)
+                                    .step_by(0.1)
+                                    .suffix(" Hz")
+                                    .show_value(true)
+                                );
+                                ui.end_row();
+
+                                if ui.button("Reset").clicked() {
+                                    self.timing.cpu_speed_hz = 700.0;
+                                    self.timing.timer_speed_hz = 60.0;
+                                    self.timing.total_speed_mod = 1.0;
+                                }
+
+                            });
+
+                    });
+                });
+
+
+            },
+            Chip8Tab::Registers => {
                 // Registers
                 egui::ScrollArea::vertical().show(ui,|ui| {
                     ui.group(|ui| {
@@ -132,13 +198,18 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
 
 
             },
+            Chip8Tab::MemoryViewer => {
+
+            },
         }
     }
 
     fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
         match tab {
             Chip8Tab::CentralDisplay => "Chip 8".into(),
-            Chip8Tab::Tool(name) => name.as_str().into(),
+            Chip8Tab::Controls => "Controls".into(),
+            Chip8Tab::Registers => "Registers".into(),
+            Chip8Tab::MemoryViewer => "Memory".into(),
         }
     }
 
