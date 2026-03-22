@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use egui_dock::{DockArea, DockState};
 
 mod chip8;
@@ -33,13 +35,14 @@ struct Chip8App {
     texture: Option<egui::TextureHandle>,
     timing: Chip8Timing,
     rom_loaded: bool,
+    is_paused: AtomicBool,
 }
 
 impl Default for Chip8App {
     fn default() -> Self {
         let mut chip8 = Chip8::new();
         let mut rom_loaded = false;
-        // Load your ROM here (Desktop only)
+        
         #[cfg(not(target_arch = "wasm32"))]
         {
             if let Ok(rom) = std::fs::read("test_roms/6-keypad.ch8") {
@@ -71,6 +74,7 @@ impl Default for Chip8App {
             texture: None,
             timing: Chip8Timing::default(),
             rom_loaded,
+            is_paused: AtomicBool::new(false),
         }
     }
 }
@@ -78,7 +82,7 @@ impl Default for Chip8App {
 impl eframe::App for Chip8App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
-            if self.rom_loaded {
+            if self.rom_loaded && !self.is_paused.load(std::sync::atomic::Ordering::Relaxed) {
                 let dt = ctx.input(|i| i.stable_dt);
     
                 self.timing.cpu_accumulator += dt;
@@ -103,6 +107,7 @@ impl eframe::App for Chip8App {
                                 chip8: &mut self.chip8,
                                 texture_handle: &mut self.texture,
                                 timing: &mut self.timing,
+                                is_paused: &mut self.is_paused,
                             };
                 
                             DockArea::new(&mut self.dock_state)

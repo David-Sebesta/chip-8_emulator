@@ -1,8 +1,10 @@
-use std::fmt::format;
+use std::{fmt::format, sync::atomic::AtomicBool};
 
 use eframe::egui;
 use egui::{Color32, RichText, epaint::text};
 use egui_dock::TabViewer;
+use rfd::AsyncFileDialog;
+use tokio;
 
 use crate::{Chip8, Chip8Timing};
 
@@ -18,7 +20,7 @@ pub struct Chip8TabViewer<'a> {
     pub chip8: &'a mut Chip8,
     pub texture_handle: &'a mut Option<egui::TextureHandle>,
     pub timing: &'a mut Chip8Timing,
-
+    pub is_paused: &'a mut AtomicBool,
 }
 
 impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
@@ -70,6 +72,17 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
 
                 egui::ScrollArea::both().show(ui,|ui| {
                     ui.group(|ui| {
+                        if ui.button(RichText::new("Load ROM").strong()).clicked() {
+                            #[cfg(target_arch = "wasm32")] {
+                                wasm_bindgen_futures::spawn_local(self.upload_file());
+                            }
+                            #[cfg(not(target_arch = "wasm32"))] {
+                                pollster::block_on(self.upload_file());
+                            } 
+
+                        }
+
+
                         ui.label(RichText::new("Timing").strong());
                         
                         // Current CPU hz and timer hz
@@ -259,5 +272,36 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
     fn is_closeable(&self, _tab: &Self::Tab) -> bool {
         false
     }
+
+}
+
+impl<'a> Chip8TabViewer<'a> {
+
+    async fn upload_file(&mut self) {
+
+        self.is_paused.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let file_handle = AsyncFileDialog::new()
+            .add_filter("chip8", &["ch8", "bin"])
+            .set_directory("/")
+            .pick_file()
+            .await;
+
+        if let Some(file) = file_handle {
+            let data = file.read().await;
+            let file_name = file.file_name();
+
+            self.chip8.reset();
+            self.chip8.load_rom(&data);
+
+
+        }
+
+        self.is_paused.store(false, std::sync::atomic::Ordering::Relaxed);
+
+
+
+    }
+
 
 }
