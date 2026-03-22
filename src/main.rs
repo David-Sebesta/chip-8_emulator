@@ -178,25 +178,21 @@ impl Chip8App {
         let sample_rate = config.sample_rate() as f64;
         let channels = config.channels() as usize;
 
-        //let mut sample_clock = 0f64;
         let frequency = self.frequency.clone();
-        
-        // let mut next_value = move || {
-        //     sample_clock = (sample_clock + 1.0) % sample_rate;
-        //     let current_freq = *frequency.lock().unwrap() as f64;
-        //     (sample_clock * current_freq * std::f64::consts::TAU / sample_rate).sin() as f32
-        // };
-
         let mut phase = 0.0f64;
+        let mut current_freq = 440.0f64;
 
         let stream = device.build_output_stream(
             &config.into(),
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                let current_freq = *frequency.lock().unwrap() as f64;
+                if let Ok(lock) = frequency.try_lock() {
+                    current_freq = *lock as f64;
+                }
+                
                 let phase_step = (current_freq * std::f64::consts::TAU) / sample_rate;
 
                 for frame in data.chunks_mut(channels) {
-                    let value = phase.sin() as f32;
+                    let value = (phase.sin() as f32);
                     for sample in frame.iter_mut() {
                         *sample = value;
                     }
@@ -206,7 +202,7 @@ impl Chip8App {
             |err| log::error!("Audio Error: {:?}", err),
             None).ok()?;
 
-        //let _ = stream.pause();
+        
         Some(stream)
     }
 
