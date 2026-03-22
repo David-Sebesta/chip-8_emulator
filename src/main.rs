@@ -60,7 +60,7 @@ impl Default for Chip8App {
         dock_state.main_surface_mut().split_below(
             left_panel, 
             0.5, // 50% height of the left side
-            vec![Chip8Tab::Registers]
+            vec![Chip8Tab::Registers, Chip8Tab::InstructionHistory]
         );
 
 

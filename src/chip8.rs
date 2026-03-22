@@ -28,7 +28,7 @@ const DEFUALT_FONT: [u8; 80] = [0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
                                   
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-enum Instruction {
+pub enum Instruction {
     SYS(u16),        // 0x0nnn 
     CLS,             // 0x00E0 - Clear Display
     RET,             // 0x00EE - Return 
@@ -428,6 +428,8 @@ impl Chip8 {
     pub fn dt(&self) -> u8 { self.dt }
     pub fn st(&self) -> u8 { self.st }
     pub fn memory(&self) -> &[u8; MEMORY_SIZE] { &self.memory }
+    pub fn instruction_history(&self) -> &VecDeque<Instruction> { &self.instruction_history }
+
 
     pub fn reset(&mut self) {
         self.v = [0; GENERAL_REGISTER_COUNT];

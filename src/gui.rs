@@ -11,6 +11,7 @@ pub enum Chip8Tab {
     Controls,
     Registers,
     MemoryViewer,
+    InstructionHistory,
 }
 
 pub struct Chip8TabViewer<'a> {
@@ -67,7 +68,7 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
             },
             Chip8Tab::Controls => {
 
-                egui::ScrollArea::vertical().show(ui,|ui| {
+                egui::ScrollArea::both().show(ui,|ui| {
                     ui.group(|ui| {
                         ui.label(RichText::new("Timing").strong());
                         
@@ -112,7 +113,6 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                                 ui.add(
                                     egui::Slider::new( &mut self.timing.total_speed_mod, 0.0..=3.0)
                                     .step_by(0.1)
-                                    .suffix(" Hz")
                                     .show_value(true)
                                 );
                                 ui.end_row();
@@ -132,7 +132,7 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
             },
             Chip8Tab::Registers => {
                 // Registers
-                egui::ScrollArea::vertical().show(ui,|ui| {
+                egui::ScrollArea::both().show(ui,|ui| {
                     ui.group(|ui| {
                         ui.label(RichText::new("Special Registers").strong());
                         egui::Grid::new("special_regs")
@@ -219,6 +219,7 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                                     for col in 0..16 {
                                         ui.label(RichText::new(format!("{:0X} ", memory[row+col]))
                                             .background_color(if row+col == pc as usize {Color32::WHITE} else {Color32::default()})
+                                            .monospace()
                                         );
                                     }
                                     ui.end_row();
@@ -228,6 +229,16 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                     });
                 });
             },
+            Chip8Tab::InstructionHistory => {
+                egui::ScrollArea::both().show(ui, |ui| {
+                    ui.group(|ui| {
+                        let instuctions = self.chip8.instruction_history();
+                        for instruction in instuctions {
+                            ui.label(RichText::new(format!("{:?}", instruction)).monospace());
+                        }
+                    });
+                });
+            }
         }
     }
 
@@ -237,6 +248,7 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
             Chip8Tab::Controls => "Controls".into(),
             Chip8Tab::Registers => "Registers".into(),
             Chip8Tab::MemoryViewer => "Memory".into(),
+            Chip8Tab::InstructionHistory => "Instruction History".into(),
         }
     }
 
