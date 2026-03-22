@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use rand;
 
 
@@ -25,7 +27,7 @@ const DEFUALT_FONT: [u8; 80] = [0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
                                 0xF0, 0x80, 0xF0, 0x80, 0x80,];  // F
                                   
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 enum Instruction {
     SYS(u16),        // 0x0nnn 
     CLS,             // 0x00E0 - Clear Display
@@ -46,7 +48,7 @@ enum Instruction {
     SHR(u8, u8),     // 0x8xy6 - Vx = Vx Shift Right 1, If the least-significant bit of Vx is 1, then VF is set to 1, otherwise 0. Then Vx is divided by 2.
     SUBN(u8, u8),    // 0x8xy7 - Vx = Vy - Vx, Set VF = !borrow
     SHL(u8, u8),     // 0x8xyE - Vx = Vx Shift Left 1, If the most-significant bit of Vx is 1, then VF is set to 1, otherwise to 0. Then Vx is multiplied by 2.
-    SNEReg(u8, u8),  // 0x9xy0 Skip next instruction if Vx != Vy
+    SNEReg(u8, u8),  // 0x9xy0 - Skip next instruction if Vx != Vy
     LDI(u16),        // 0xAnnn - I = nnn
     JPV0(u16),       // 0xBnnn - PC = nnn + V0
     RND(u8, u8),     // 0xCxkk - Vx = Rand byte AND kk
@@ -77,6 +79,10 @@ pub struct Chip8 {
     st: u8, // Sound timer register
     pub display: [bool; 64*32], // Pixel buffer
     pub keys: [bool; 16], // Keys pressed
+
+    // Data tracking
+    instruction_history: VecDeque<Instruction>,
+    max_instruction_history: u16,
 }
 
 impl Chip8 {
@@ -92,6 +98,8 @@ impl Chip8 {
             st: 0,
             display: [false; 64*32],
             keys: [false; 16],
+            instruction_history: VecDeque::new(),
+            max_instruction_history: 64,
         };
 
         cpu.load_font(DEFAULT_FONT_ADDR);
@@ -121,6 +129,12 @@ impl Chip8 {
     pub fn tick(&mut self) {
         let op = self.fetch();
         let instruction = self.decode(op);
+
+        self.instruction_history.push_back(instruction.clone());
+        while self.instruction_history.len() > self.max_instruction_history as usize {
+            self.instruction_history.pop_front();
+        }
+
         self.execute(instruction);
 
     }
@@ -377,7 +391,6 @@ impl Chip8 {
                 println!("Opcode: {:?} not implemented yet", instruction);
             }
         }
-
         
     }
 
@@ -414,6 +427,7 @@ impl Chip8 {
     pub fn sp(&self) -> u8 { self.sp }
     pub fn dt(&self) -> u8 { self.dt }
     pub fn st(&self) -> u8 { self.st }
+    pub fn memory(&self) -> &[u8; MEMORY_SIZE] { &self.memory }
 
     pub fn reset(&mut self) {
         self.v = [0; GENERAL_REGISTER_COUNT];

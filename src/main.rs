@@ -42,7 +42,7 @@ impl Default for Chip8App {
         // Load your ROM here (Desktop only)
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Ok(rom) = std::fs::read("D:\\RustProjects\\chip_8_emulator\\test_roms\\6-keypad.ch8") {
+            if let Ok(rom) = std::fs::read("test_roms/6-keypad.ch8") {
                 rom_loaded = chip8.load_rom(&rom);
             }
         }

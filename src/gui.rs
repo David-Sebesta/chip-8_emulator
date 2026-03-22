@@ -17,6 +17,7 @@ pub struct Chip8TabViewer<'a> {
     pub chip8: &'a mut Chip8,
     pub texture_handle: &'a mut Option<egui::TextureHandle>,
     pub timing: &'a mut Chip8Timing,
+
 }
 
 impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
@@ -199,7 +200,33 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
 
             },
             Chip8Tab::MemoryViewer => {
+                
+                egui::ScrollArea::both().show(ui, |ui| {
+                    ui.group(|ui| {
+                        // Follow program counter
+                        // ui.checkbox(checked, atoms)
 
+                        let memory = self.chip8.memory();
+                        let pc = self.chip8.pc();
+
+                        egui::Grid::new("memory_grid")
+                            .num_columns(16)
+                            .spacing([0.0, 0.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                                for row in (0..memory.len()).step_by(16) {
+                                    ui.label(format!("0x{:0000X} ", row));
+                                    for col in 0..16 {
+                                        ui.label(RichText::new(format!("{:0X} ", memory[row+col]))
+                                            .background_color(if row+col == pc as usize {Color32::WHITE} else {Color32::default()})
+                                        );
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+
+                    });
+                });
             },
         }
     }
