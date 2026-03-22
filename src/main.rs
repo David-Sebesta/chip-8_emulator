@@ -1,5 +1,6 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
+use cpal::{FromSample, Stream, traits::{DeviceTrait, HostTrait, StreamTrait}};
 use egui_dock::{DockArea, DockState};
 
 mod chip8;
@@ -35,7 +36,10 @@ struct Chip8App {
     texture: Option<egui::TextureHandle>,
     timing: Chip8Timing,
     rom_loaded: bool,
-    is_paused: AtomicBool,
+    is_paused: Arc<AtomicBool>,
+    uploaded_rom: Arc<Mutex<Option<Vec<u8>>>>,
+    frequency: Arc<Mutex<f32>>,
+    stream: Option<cpal::Stream>,
 }
 
 impl Default for Chip8App {
@@ -66,21 +70,30 @@ impl Default for Chip8App {
             vec![Chip8Tab::Registers, Chip8Tab::InstructionHistory]
         );
 
-
-
         Self {
             chip8,
             dock_state,
             texture: None,
             timing: Chip8Timing::default(),
             rom_loaded,
-            is_paused: AtomicBool::new(false),
+            is_paused: Arc::new(AtomicBool::new(false)),
+            uploaded_rom: Arc::new(Mutex::new(None)),
+            frequency: Arc::new(Mutex::new(440.0)),
+            stream: None,
         }
     }
 }
 
 impl eframe::App for Chip8App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        if let Ok(mut lock) = self.uploaded_rom.try_lock() {
+            if let Some(rom_data) = lock.take() {
+                self.chip8.reset();
+                self.rom_loaded = self.chip8.load_rom(&rom_data);
+                self.is_paused.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             if self.rom_loaded && !self.is_paused.load(std::sync::atomic::Ordering::Relaxed) {
                 let dt = ctx.input(|i| i.stable_dt);
@@ -98,6 +111,19 @@ impl eframe::App for Chip8App {
                     self.chip8.update_timers();
                     self.timing.timer_accumulator -= timer_interval;
                 }
+
+                if self.chip8.is_sound_active() {
+                    if self.stream.is_none() {
+                        self.stream = self.setup_audio();
+                    }
+                    if let Some(stream) = &self.stream {
+                        let _ = stream.play();
+                    }
+                } else {
+                    if let Some(stream) = &self.stream {
+                        let _ = stream.pause();
+                    }
+                }
     
                 self.handle_input(ctx);
             }
@@ -107,7 +133,9 @@ impl eframe::App for Chip8App {
                                 chip8: &mut self.chip8,
                                 texture_handle: &mut self.texture,
                                 timing: &mut self.timing,
-                                is_paused: &mut self.is_paused,
+                                is_paused: &self.is_paused,
+                                uploaded_rom: &self.uploaded_rom,
+                                frequency: &self.frequency,
                             };
                 
                             DockArea::new(&mut self.dock_state)
@@ -142,6 +170,46 @@ impl Chip8App {
             self.chip8.keys[0xF] = i.key_down(egui::Key::V);
         });
     }
+
+    fn setup_audio(&mut self) -> Option<cpal::Stream> {
+        let host = cpal::default_host();
+        let device = host.default_output_device()?;
+        let config = device.default_output_config().ok()?;
+        let sample_rate = config.sample_rate() as f64;
+        let channels = config.channels() as usize;
+
+        //let mut sample_clock = 0f64;
+        let frequency = self.frequency.clone();
+        
+        // let mut next_value = move || {
+        //     sample_clock = (sample_clock + 1.0) % sample_rate;
+        //     let current_freq = *frequency.lock().unwrap() as f64;
+        //     (sample_clock * current_freq * std::f64::consts::TAU / sample_rate).sin() as f32
+        // };
+
+        let mut phase = 0.0f64;
+
+        let stream = device.build_output_stream(
+            &config.into(),
+            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                let current_freq = *frequency.lock().unwrap() as f64;
+                let phase_step = (current_freq * std::f64::consts::TAU) / sample_rate;
+
+                for frame in data.chunks_mut(channels) {
+                    let value = phase.sin() as f32;
+                    for sample in frame.iter_mut() {
+                        *sample = value;
+                    }
+                    phase = (phase + phase_step) % std::f64::consts::TAU;
+                }
+            },
+            |err| log::error!("Audio Error: {:?}", err),
+            None).ok()?;
+
+        //let _ = stream.pause();
+        Some(stream)
+    }
+
 }
 
 #[cfg(not(target_arch = "wasm32"))]

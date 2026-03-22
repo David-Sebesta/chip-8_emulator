@@ -1,10 +1,9 @@
-use std::{fmt::format, sync::atomic::AtomicBool};
+use std::{fmt::format, sync::{atomic::AtomicBool, Arc, Mutex}};
 
 use eframe::egui;
 use egui::{Color32, RichText, epaint::text};
 use egui_dock::TabViewer;
 use rfd::AsyncFileDialog;
-use tokio;
 
 use crate::{Chip8, Chip8Timing};
 
@@ -20,7 +19,9 @@ pub struct Chip8TabViewer<'a> {
     pub chip8: &'a mut Chip8,
     pub texture_handle: &'a mut Option<egui::TextureHandle>,
     pub timing: &'a mut Chip8Timing,
-    pub is_paused: &'a mut AtomicBool,
+    pub is_paused: &'a Arc<AtomicBool>,
+    pub uploaded_rom: &'a Arc<Mutex<Option<Vec<u8>>>>,
+    pub frequency: &'a Arc<Mutex<f32>>,
 }
 
 impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
@@ -73,11 +74,35 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                 egui::ScrollArea::both().show(ui,|ui| {
                     ui.group(|ui| {
                         if ui.button(RichText::new("Load ROM").strong()).clicked() {
+                            self.is_paused.store(true, std::sync::atomic::Ordering::Relaxed);
+                            
+                            let uploaded_rom = self.uploaded_rom.clone();
+                            let is_paused = self.is_paused.clone();
+                            
+                            let task = async move {
+                                let file_handle = AsyncFileDialog::new()
+                                    .add_filter("chip8", &["ch8", "bin"])
+                                    .set_directory("/")
+                                    .pick_file()
+                                    .await;
+
+                                if let Some(file) = file_handle {
+                                    let data = file.read().await;
+                                    if let Ok(mut lock) = uploaded_rom.lock() {
+                                        *lock = Some(data);
+                                    }
+                                } else {
+                                    is_paused.store(false, std::sync::atomic::Ordering::Relaxed);
+                                }
+                            };
+
                             #[cfg(target_arch = "wasm32")] {
-                                wasm_bindgen_futures::spawn_local(self.upload_file());
+                                wasm_bindgen_futures::spawn_local(task);
                             }
                             #[cfg(not(target_arch = "wasm32"))] {
-                                pollster::block_on(self.upload_file());
+                                std::thread::spawn(move || {
+                                    pollster::block_on(task);
+                                });
                             } 
 
                         }
@@ -139,7 +164,23 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                             });
 
                     });
+
+                    ui.group(|ui| {
+                        ui.label(RichText::new("Audio Settings").strong());
+                        ui.label(RichText::new("Frequency").monospace());
+                        
+                        let mut current_freq = *self.frequency.lock().unwrap();
+                        let slider = ui.add(
+                            egui::Slider::new(&mut current_freq, 10.0..=1000.0)
+                            .step_by(0.1)
+                            .show_value(true)
+                        );
+                        if slider.changed() {
+                            *self.frequency.lock().unwrap() = current_freq;
+                        }
+                    })
                 });
+
 
 
             },
@@ -272,36 +313,5 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
     fn is_closeable(&self, _tab: &Self::Tab) -> bool {
         false
     }
-
-}
-
-impl<'a> Chip8TabViewer<'a> {
-
-    async fn upload_file(&mut self) {
-
-        self.is_paused.store(true, std::sync::atomic::Ordering::Relaxed);
-
-        let file_handle = AsyncFileDialog::new()
-            .add_filter("chip8", &["ch8", "bin"])
-            .set_directory("/")
-            .pick_file()
-            .await;
-
-        if let Some(file) = file_handle {
-            let data = file.read().await;
-            let file_name = file.file_name();
-
-            self.chip8.reset();
-            self.chip8.load_rom(&data);
-
-
-        }
-
-        self.is_paused.store(false, std::sync::atomic::Ordering::Relaxed);
-
-
-
-    }
-
 
 }

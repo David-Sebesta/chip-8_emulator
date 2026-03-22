@@ -429,7 +429,7 @@ impl Chip8 {
     pub fn st(&self) -> u8 { self.st }
     pub fn memory(&self) -> &[u8; MEMORY_SIZE] { &self.memory }
     pub fn instruction_history(&self) -> &VecDeque<Instruction> { &self.instruction_history }
-
+    pub fn is_sound_active(&self) -> bool { self.st > 0 }
 
     pub fn reset(&mut self) {
         self.v = [0; GENERAL_REGISTER_COUNT];
