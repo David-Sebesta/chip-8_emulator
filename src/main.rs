@@ -1,6 +1,6 @@
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
-use cpal::{FromSample, Stream, traits::{DeviceTrait, HostTrait, StreamTrait}};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use egui_dock::{DockArea, DockState};
 
 mod chip8;
@@ -46,7 +46,7 @@ impl Default for Chip8App {
     fn default() -> Self {
         let mut chip8 = Chip8::new();
         let mut rom_loaded = false;
-        
+
         #[cfg(not(target_arch = "wasm32"))]
         {
             if let Ok(rom) = std::fs::read("test_roms/6-keypad.ch8") {
@@ -55,19 +55,19 @@ impl Default for Chip8App {
         }
 
         let mut dock_state = DockState::new(vec![Chip8Tab::CentralDisplay]);
-        
+
         // Split to the left
         let [_right_node, left_panel] = dock_state.main_surface_mut().split_left(
             egui_dock::NodeIndex::root(),
             0.33,
-            vec![Chip8Tab::Controls, Chip8Tab::MemoryViewer]
+            vec![Chip8Tab::Controls, Chip8Tab::MemoryViewer],
         );
 
         // Registers below
         dock_state.main_surface_mut().split_below(
-            left_panel, 
+            left_panel,
             0.5, // 50% height of the left side
-            vec![Chip8Tab::Registers, Chip8Tab::InstructionHistory]
+            vec![Chip8Tab::Registers, Chip8Tab::InstructionHistory],
         );
 
         Self {
@@ -86,27 +86,29 @@ impl Default for Chip8App {
 
 impl eframe::App for Chip8App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        if let Ok(mut lock) = self.uploaded_rom.try_lock() {
-            if let Some(rom_data) = lock.take() {
-                self.chip8.reset();
-                self.rom_loaded = self.chip8.load_rom(&rom_data);
-                self.is_paused.store(false, std::sync::atomic::Ordering::Relaxed);
-            }
+        if let Ok(mut lock) = self.uploaded_rom.try_lock()
+            && let Some(rom_data) = lock.take()
+        {
+            self.chip8.reset();
+            self.rom_loaded = self.chip8.load_rom(&rom_data);
+            self.is_paused
+                .store(false, std::sync::atomic::Ordering::Relaxed);
         }
 
-        eframe::egui::CentralPanel::default().show(ctx, |ui| {
+        eframe::egui::CentralPanel::default().show(ctx, |_ui| {
             if self.rom_loaded && !self.is_paused.load(std::sync::atomic::Ordering::Relaxed) {
                 let dt = ctx.input(|i| i.stable_dt);
-    
+
                 self.timing.cpu_accumulator += dt;
                 let cpu_interval = 1.0 / (self.timing.cpu_speed_hz * self.timing.total_speed_mod);
                 while self.timing.cpu_accumulator >= cpu_interval {
                     self.chip8.tick();
                     self.timing.cpu_accumulator -= cpu_interval;
                 }
-    
+
                 self.timing.timer_accumulator += dt;
-                let timer_interval = 1.0 / (self.timing.timer_speed_hz * self.timing.total_speed_mod);
+                let timer_interval =
+                    1.0 / (self.timing.timer_speed_hz * self.timing.total_speed_mod);
                 while self.timing.timer_accumulator >= timer_interval {
                     self.chip8.update_timers();
                     self.timing.timer_accumulator -= timer_interval;
@@ -124,29 +126,28 @@ impl eframe::App for Chip8App {
                         let _ = stream.pause();
                     }
                 }
-    
+
                 self.handle_input(ctx);
             }
 
             egui::CentralPanel::default().show(ctx, |ui| {
-                            let mut viewer = Chip8TabViewer {
-                                chip8: &mut self.chip8,
-                                texture_handle: &mut self.texture,
-                                timing: &mut self.timing,
-                                is_paused: &self.is_paused,
-                                uploaded_rom: &self.uploaded_rom,
-                                frequency: &self.frequency,
-                            };
-                
-                            DockArea::new(&mut self.dock_state)
-                                .style(egui_dock::Style::from_egui(ui.style()))
-                                .show_inside(ui, &mut viewer);
+                let mut viewer = Chip8TabViewer {
+                    chip8: &mut self.chip8,
+                    texture_handle: &mut self.texture,
+                    timing: &mut self.timing,
+                    is_paused: &self.is_paused,
+                    uploaded_rom: &self.uploaded_rom,
+                    frequency: &self.frequency,
+                };
+
+                DockArea::new(&mut self.dock_state)
+                    .style(egui_dock::Style::from_egui(ui.style()))
+                    .show_inside(ui, &mut viewer);
             });
 
             ctx.request_repaint();
         });
     }
-
 }
 
 impl Chip8App {
@@ -182,30 +183,31 @@ impl Chip8App {
         let mut phase = 0.0f64;
         let mut current_freq = 440.0f64;
 
-        let stream = device.build_output_stream(
-            &config.into(),
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                if let Ok(lock) = frequency.try_lock() {
-                    current_freq = *lock as f64;
-                }
-                
-                let phase_step = (current_freq * std::f64::consts::TAU) / sample_rate;
-
-                for frame in data.chunks_mut(channels) {
-                    let value = (phase.sin() as f32);
-                    for sample in frame.iter_mut() {
-                        *sample = value;
+        let stream = device
+            .build_output_stream(
+                &config.into(),
+                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    if let Ok(lock) = frequency.try_lock() {
+                        current_freq = *lock as f64;
                     }
-                    phase = (phase + phase_step) % std::f64::consts::TAU;
-                }
-            },
-            |err| log::error!("Audio Error: {:?}", err),
-            None).ok()?;
 
-        
+                    let phase_step = (current_freq * std::f64::consts::TAU) / sample_rate;
+
+                    for frame in data.chunks_mut(channels) {
+                        let value = phase.sin() as f32;
+                        for sample in frame.iter_mut() {
+                            *sample = value;
+                        }
+                        phase = (phase + phase_step) % std::f64::consts::TAU;
+                    }
+                },
+                |err| log::error!("Audio Error: {:?}", err),
+                None,
+            )
+            .ok()?;
+
         Some(stream)
     }
-
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -250,12 +252,12 @@ fn main() {
 
         let start_result = eframe::WebRunner::new()
             .start(
-                canvas, 
+                canvas,
                 web_options,
                 Box::new(|_cc| Ok(Box::new(Chip8App::default()))),
             )
             .await;
-            
+
         if let Err(e) = start_result {
             log::error!("Failed to start eframe: {:?}", e);
         }

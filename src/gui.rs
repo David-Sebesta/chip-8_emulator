@@ -1,8 +1,7 @@
-use std::{fmt::format, sync::{atomic::AtomicBool, Arc, Mutex}};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
 use eframe::egui;
-use egui::{Color32, RichText, epaint::text};
-use egui_dock::TabViewer;
+use egui::{Color32, RichText};
 use rfd::AsyncFileDialog;
 
 use crate::{Chip8, Chip8Timing};
@@ -40,45 +39,48 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                     (available.x, available.x * 0.5)
                 };
 
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 
-                ui.painter().rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
+                ui.painter()
+                    .rect_filled(rect, 0.0, egui::Color32::DARK_GRAY);
 
                 let texture = self.texture_handle.get_or_insert_with(|| {
                     let initial_pixels = vec![Color32::BLACK; 64 * 32];
                     ui.ctx().load_texture(
                         "chip-8_screen",
                         egui::ColorImage::new([64, 32], initial_pixels),
-                        egui::TextureOptions::NEAREST
+                        egui::TextureOptions::NEAREST,
                     )
                 });
 
-                let pixels: Vec<u8> = self.chip8.display
+                let pixels: Vec<u8> = self
+                    .chip8
+                    .display
                     .iter()
-                    .map(|&p| if p {255} else {0})
+                    .map(|&p| if p { 255 } else { 0 })
                     .collect();
 
                 let image = egui::ColorImage::from_gray([64, 32], &pixels);
                 texture.set(image, egui::TextureOptions::NEAREST);
 
                 ui.painter().image(
-                    texture.id(), 
-                    rect, 
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), 
-                    egui::Color32::WHITE
+                    texture.id(),
+                    rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
                 );
-
-            },
+            }
             Chip8Tab::Controls => {
-
-                egui::ScrollArea::both().show(ui,|ui| {
+                egui::ScrollArea::both().show(ui, |ui| {
                     ui.group(|ui| {
                         if ui.button(RichText::new("Load ROM").strong()).clicked() {
-                            self.is_paused.store(true, std::sync::atomic::Ordering::Relaxed);
-                            
+                            self.is_paused
+                                .store(true, std::sync::atomic::Ordering::Relaxed);
+
                             let uploaded_rom = self.uploaded_rom.clone();
                             let is_paused = self.is_paused.clone();
-                            
+
                             let task = async move {
                                 let file_handle = AsyncFileDialog::new()
                                     .add_filter("chip8", &["ch8", "bin"])
@@ -96,31 +98,43 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                                 }
                             };
 
-                            #[cfg(target_arch = "wasm32")] {
+                            #[cfg(target_arch = "wasm32")]
+                            {
                                 wasm_bindgen_futures::spawn_local(task);
                             }
-                            #[cfg(not(target_arch = "wasm32"))] {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
                                 std::thread::spawn(move || {
                                     pollster::block_on(task);
                                 });
-                            } 
-
+                            }
                         }
 
-
                         ui.label(RichText::new("Timing").strong());
-                        
+
                         // Current CPU hz and timer hz
                         egui::Grid::new("current_hz")
                             .num_columns(2)
                             .spacing([10.0, 4.0])
                             .show(ui, |ui| {
                                 ui.label("Current CPU Hz:");
-                                ui.label(RichText::new(format!("{:} Hz", self.timing.cpu_speed_hz * self.timing.total_speed_mod)).monospace());
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{:} Hz",
+                                        self.timing.cpu_speed_hz * self.timing.total_speed_mod
+                                    ))
+                                    .monospace(),
+                                );
                                 ui.end_row();
 
                                 ui.label("Current Timer Hz:");
-                                ui.label(RichText::new(format!("{:} Hz", self.timing.timer_speed_hz * self.timing.total_speed_mod)).monospace());
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{:} Hz",
+                                        self.timing.timer_speed_hz * self.timing.total_speed_mod
+                                    ))
+                                    .monospace(),
+                                );
                                 ui.end_row();
                             });
 
@@ -133,25 +147,25 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                             .show(ui, |ui| {
                                 ui.label("CPU Hz:");
                                 ui.add(
-                                    egui::Slider::new( &mut self.timing.cpu_speed_hz, 0.0..=1000.0)
-                                    .suffix(" Hz")
-                                    .show_value(true)
+                                    egui::Slider::new(&mut self.timing.cpu_speed_hz, 0.0..=1000.0)
+                                        .suffix(" Hz")
+                                        .show_value(true),
                                 );
                                 ui.end_row();
 
                                 ui.label("Timer Hz:");
                                 ui.add(
-                                    egui::Slider::new( &mut self.timing.timer_speed_hz, 0.0..=120.0)
-                                    .suffix(" Hz")
-                                    .show_value(true)
+                                    egui::Slider::new(&mut self.timing.timer_speed_hz, 0.0..=120.0)
+                                        .suffix(" Hz")
+                                        .show_value(true),
                                 );
                                 ui.end_row();
 
                                 ui.label("Total Modifier:");
                                 ui.add(
-                                    egui::Slider::new( &mut self.timing.total_speed_mod, 0.0..=3.0)
-                                    .step_by(0.1)
-                                    .show_value(true)
+                                    egui::Slider::new(&mut self.timing.total_speed_mod, 0.0..=3.0)
+                                        .step_by(0.1)
+                                        .show_value(true),
                                 );
                                 ui.end_row();
 
@@ -160,33 +174,28 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                                     self.timing.timer_speed_hz = 60.0;
                                     self.timing.total_speed_mod = 1.0;
                                 }
-
                             });
-
                     });
 
                     ui.group(|ui| {
                         ui.label(RichText::new("Audio Settings").strong());
                         ui.label(RichText::new("Frequency").monospace());
-                        
+
                         let mut current_freq = *self.frequency.lock().unwrap();
                         let slider = ui.add(
                             egui::Slider::new(&mut current_freq, 10.0..=1000.0)
-                            .step_by(0.1)
-                            .show_value(true)
+                                .step_by(0.1)
+                                .show_value(true),
                         );
                         if slider.changed() {
                             *self.frequency.lock().unwrap() = current_freq;
                         }
                     })
                 });
-
-
-
-            },
+            }
             Chip8Tab::Registers => {
                 // Registers
-                egui::ScrollArea::both().show(ui,|ui| {
+                egui::ScrollArea::both().show(ui, |ui| {
                     ui.group(|ui| {
                         ui.label(RichText::new("Special Registers").strong());
                         egui::Grid::new("special_regs")
@@ -194,38 +203,52 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                             .spacing([40.0, 4.0])
                             .striped(true)
                             .show(ui, |ui| {
-                            ui.label("PC:");
-                            ui.label(RichText::new(format!("0x{:03X}", self.chip8.pc())).monospace());
-                            ui.label(RichText::new(format!("0b{:012b}", self.chip8.pc())).monospace());
-                            ui.end_row();
+                                ui.label("PC:");
+                                ui.label(
+                                    RichText::new(format!("0x{:03X}", self.chip8.pc())).monospace(),
+                                );
+                                ui.label(
+                                    RichText::new(format!("0b{:012b}", self.chip8.pc()))
+                                        .monospace(),
+                                );
+                                ui.end_row();
 
-                            ui.label("I:");
-                            ui.label(RichText::new(format!("0x{:03X}", self.chip8.i())).monospace());
-                            ui.label(RichText::new(format!("0b{:012b}", self.chip8.i())).monospace());
-                            ui.end_row();
+                                ui.label("I:");
+                                ui.label(
+                                    RichText::new(format!("0x{:03X}", self.chip8.i())).monospace(),
+                                );
+                                ui.label(
+                                    RichText::new(format!("0b{:012b}", self.chip8.i())).monospace(),
+                                );
+                                ui.end_row();
 
-                            ui.label("SP:");
-                            ui.label(RichText::new(format!("0x{:02X}", self.chip8.sp())).monospace());
-                            ui.label(RichText::new(format!("0b{:08b}", self.chip8.sp())).monospace());
-                            ui.end_row();
+                                ui.label("SP:");
+                                ui.label(
+                                    RichText::new(format!("0x{:02X}", self.chip8.sp())).monospace(),
+                                );
+                                ui.label(
+                                    RichText::new(format!("0b{:08b}", self.chip8.sp())).monospace(),
+                                );
+                                ui.end_row();
 
-                            ui.label("DT:");
-                            ui.label(RichText::new(format!("{:03}", self.chip8.dt())).monospace());
-                            ui.end_row();
+                                ui.label("DT:");
+                                ui.label(
+                                    RichText::new(format!("{:03}", self.chip8.dt())).monospace(),
+                                );
+                                ui.end_row();
 
-                            ui.label("ST:");
-                            ui.label(RichText::new(format!("{:03}", self.chip8.st())).monospace());
-                            ui.end_row();
-                        });
-
-                        
-                        
+                                ui.label("ST:");
+                                ui.label(
+                                    RichText::new(format!("{:03}", self.chip8.st())).monospace(),
+                                );
+                                ui.end_row();
+                            });
                     });
 
                     ui.add_space(10.0);
-                
+
                     let v = self.chip8.registers();
-                    
+
                     ui.group(|ui| {
                         ui.label(RichText::new("General Registers").strong());
                         egui::Grid::new("v_regs")
@@ -238,7 +261,7 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                                     ui.label(format!("V{:X}:", i));
                                     ui.label(RichText::new(format!("0x{:02X}", v[i])).monospace());
                                     ui.label(RichText::new(format!("0b{:08b}", v[i])).monospace());
-                                
+
                                     // Right
                                     let j = i + 8;
                                     ui.label(format!("V{:X}:", j));
@@ -246,15 +269,11 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                                     ui.label(RichText::new(format!("0b{:08b}", v[j])).monospace());
                                     ui.end_row();
                                 }
-                        });
+                            });
                     });
-                
                 });
-
-
-            },
+            }
             Chip8Tab::MemoryViewer => {
-                
                 egui::ScrollArea::both().show(ui, |ui| {
                     ui.group(|ui| {
                         // Follow program counter
@@ -271,18 +290,22 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
                                 for row in (0..memory.len()).step_by(16) {
                                     ui.label(format!("0x{:0000X} ", row));
                                     for col in 0..16 {
-                                        ui.label(RichText::new(format!("{:0X} ", memory[row+col]))
-                                            .background_color(if row+col == pc as usize {Color32::WHITE} else {Color32::default()})
-                                            .monospace()
+                                        ui.label(
+                                            RichText::new(format!("{:0X} ", memory[row + col]))
+                                                .background_color(if row + col == pc as usize {
+                                                    Color32::WHITE
+                                                } else {
+                                                    Color32::default()
+                                                })
+                                                .monospace(),
                                         );
                                     }
                                     ui.end_row();
                                 }
                             });
-
                     });
                 });
-            },
+            }
             Chip8Tab::InstructionHistory => {
                 egui::ScrollArea::both().show(ui, |ui| {
                     ui.group(|ui| {
@@ -313,5 +336,4 @@ impl<'a> egui_dock::TabViewer for Chip8TabViewer<'a> {
     fn is_closeable(&self, _tab: &Self::Tab) -> bool {
         false
     }
-
 }
