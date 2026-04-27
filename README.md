@@ -11,3 +11,7 @@ Try it here https://david-sebesta.github.io/chip-8_emulator/
 - View memory in real time
 - Change clock speeds
 - Desktop App and WASM build
+
+## TODO:
+
+- Fix the audio in WASM
